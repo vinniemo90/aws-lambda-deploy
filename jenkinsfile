@@ -1,0 +1,59 @@
+AWS_REGION = 'us-east-1'
+DEPLOYMENT_ZIP_FILE = 'lambda-deployment-pkg.zip'
+S3_BUCKET = 's3_bucket_name'
+DOCKER_TAG = 'lambda-function'
+
+pipeline {
+    agent{ label ''}
+    stages {
+       stage('Build docker image') {
+           steps {
+               script {
+                   try {
+                       sh "docker rmi -f ${DOCKER_TAG}"
+                   }
+                   catch(e) {
+
+                   }
+                   sh "docker build -t ${DOCKER_TAG} ."
+               }
+           }
+       } 
+
+       stage('Upload deployment package') {
+           steps {
+               script {
+                   sh "docker run --rm -e S3_BUCKET_LOC=${S3_BUCKET} -t ${DOCKER_TAG}"
+               }
+           }
+       }
+
+       stage('Terraform init and apply') {
+           steps {
+               script {
+                   sh """
+                    terraform init -input=false -reconfigure -backend-config=terraform/init.tfvars terraform/
+                    terraform apply -auto-approve -input=false -var-file=terraform/init.tfvars -var-file=terraform/deploy.tfvars terraform/
+                   """
+               }
+           }
+       }
+    }
+
+    post {
+        always {
+            script {
+                try {
+                    sh "docker rmi -f ${DOCKER_TAG}"
+                }
+                catch (e) {
+
+                }
+            }
+        }
+
+        success {
+            cleanWs()
+        }
+    }
+}
